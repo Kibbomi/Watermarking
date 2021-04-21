@@ -129,7 +129,7 @@ void loadFile(string &imageName, string &watermarkedImageName) {
 	}
 	else
 	{
-		cout << "error : such file is not exist!\n";
+		cout << "error : such file does not exist!\n";
 		exit(0);
 	}
 	File.close();
@@ -678,7 +678,7 @@ int main()
 	cin >> input;
 
 	while (input <= 0 || 4 <= input) {
-		cout << "error : enter the number between 1 to 2\n";
+		cout << "error : enter the number between 1 to 3\n";
 		cin >> input;
 	}
 
