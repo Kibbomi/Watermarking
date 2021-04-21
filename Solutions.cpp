@@ -1,15 +1,16 @@
 #include <iostream>
 #include <fstream>
 #include <cmath>
+#include <vector>
+#include <string>
 using namespace std;
 
 typedef unsigned char BYTE;	//1byte
 typedef unsigned short WORD;	//2byte
 typedef unsigned long DWORD;	//4byte
 bool extract = false, embed = false;
-#define SHIFT(a, n) (a<<n)
-int i = 0;
-int K = 15;
+const int K = 2;	//strength factor
+
 struct BITMAPFILEHEADER {
 	BYTE bfType[2];	//2byte [0]='M', [1] = 'B' --> "BM"
 	DWORD bfSize;	//4byte
@@ -41,7 +42,7 @@ struct colorData {
 
 BYTE watermarkPixelData[64][8];	//8*8 = 64bit 1bit = 1 pixel
 BYTE extractedWatermarkPixelData[64][8];
-BYTE subWatermark[5][32][4];	//index 1~4
+BYTE preprocessedWatermark[64][8];	//mixed 
 
 DWORD read4byte(ifstream &File) {
 	DWORD ret = 0;
@@ -95,9 +96,8 @@ void write2byte(ofstream &File, WORD &original)
 	return;
 }
 
-//파일 이름 string으로 입력받기.
-void loadFile() {
-	ifstream File("Test.bmp", ios::in | ios::binary);
+void loadFile(string &imageName, string &watermarkedImageName) {
+	ifstream File(imageName, ios::in | ios::binary);
 
 	if (File.is_open()) {
 		bmpHeader.bfType[1] = File.get();
@@ -127,11 +127,16 @@ void loadFile() {
 			}
 		}
 	}
+	else
+	{
+		cout << "error : such file is not exist!\n";
+		exit(0);
+	}
 	File.close();
 
 	if (extract)
 	{
-		ifstream File("out.bmp", ios::in | ios::binary);
+		ifstream File(watermarkedImageName, ios::in | ios::binary);
 
 		if (File.is_open()) {
 			//Header is same...
@@ -162,12 +167,17 @@ void loadFile() {
 				}
 			}
 		}
+		else
+		{
+			cout << "error : such file is not exist!\n";
+			exit(0);
+		}
 		File.close();
 	}
 	return;
 }
-void loadWatermark() {
-	ifstream File("watermarkTest.bmp", ios::in | ios::binary);
+void loadWatermark(string &watermarkName) {
+	ifstream File(watermarkName, ios::in | ios::binary);
 
 	if (File.is_open()) {
 		watermarkHeader.bfType[1] = File.get();
@@ -206,7 +216,7 @@ void loadWatermark() {
 }
 void saveFile()
 {
-	ofstream File("out.bmp", ios::out | ios::binary | ios::trunc);
+	ofstream File("output.bmp", ios::out | ios::binary | ios::trunc);
 	
 	File.put(bmpHeader.bfType[1]);
 	File.put(bmpHeader.bfType[0]);
@@ -249,27 +259,9 @@ void saveFile()
 }
 void saveWatermark()
 {
-	ofstream File("outWatermark.bmp", ios::out | ios::binary | ios::trunc);
-	/*
-	File.put(watermarkHeader.bfType[1]);
-	File.put(watermarkHeader.bfType[0]);
-	write4byte(File, watermarkHeader.bfSize);
-	write2byte(File, watermarkHeader.bfReserved1);
-	write2byte(File, watermarkHeader.bfReserved2);
-	write4byte(File, watermarkHeader.bfOffBits);
-
-	write4byte(File, watermarkInfo.biSize);
-	write4byte(File, watermarkInfo.biWidth);
-	write4byte(File, watermarkInfo.biHeight);
-	write2byte(File, watermarkInfo.biPlanes);
-	write2byte(File, watermarkInfo.biBitCount);
-	write4byte(File, watermarkInfo.biCompression);
-	write4byte(File, watermarkInfo.biSizeImage);
-	write4byte(File, watermarkInfo.biXPelsPerMeter);
-	write4byte(File, watermarkInfo.biYPelsPerMeter);
-	write4byte(File, watermarkInfo.biClrUsed);
-	write4byte(File, watermarkInfo.biClrImportant);
-	*/
+	ofstream File("outputWatermark.bmp", ios::out | ios::binary | ios::trunc);
+	
+	//write header
 	File.put(66);	//0
 	File.put(77);	//1
 	File.put(62);	//2
@@ -324,8 +316,6 @@ void saveWatermark()
 	File.put(0);	//51
 	File.put(0);	//52
 	File.put(0);	//53
-
-	//color table?
 	File.put(0);	//54
 	File.put(0);	//55
 	File.put(0);	//56
@@ -335,13 +325,14 @@ void saveWatermark()
 	File.put(-1);	//60
 	File.put(0);	//61
 
+	//Header end
 	
 	
-
+	//Data begin
 	for (int i = 0; i < 64; ++i) 
 		for (int j = 0; j < 8; ++j)
 			File.put(extractedWatermarkPixelData[i][j]);
-
+	
 	File.close();
 	return;
 }
@@ -396,42 +387,70 @@ int SIRD(colorData block[8][8])
 }
 
 void preprocessing() {
-	//일단 십자가 모양으로 해보자.
-	//Attack을 하지 않으면 추출에는 문제 없을 듯.
 	
-	//sub watermark 1
-	for (int i = 0; i < 32; ++i) 
-		for (int j = 0; j < 4; ++j) 
-			subWatermark[1][i][j] = watermarkPixelData[i][j];
+	vector<int> w[5];
 
-	//sub watermark 2
-	for (int i = 0; i < 32; ++i) 
-		for (int j = 4; j < 8; ++j) 
-			subWatermark[2][i][j - 4] = watermarkPixelData[i][j];
+	for (int i = 0; i < 64; ++i) {
+		for (int j = 0; j < 8; ++j) {
+			BYTE sampleByte = watermarkPixelData[i][j];
 
-	//sub watermark3
-	for (int i = 32; i < 64; ++i)
-		for (int j = 4; j < 8; ++j)
-			subWatermark[3][i - 32][j - 4] = watermarkPixelData[i][j];
-
-	for (int i = 32; i < 64; ++i) 
-		for (int j = 0; j < 4; ++j)
-			subWatermark[4][i - 32][j] = watermarkPixelData[i][j];
+			if (i % 2 == 0) {
+				w[1].push_back(sampleByte >> 7 & 1);
+				w[3].push_back(sampleByte >> 6 & 1);
+				w[1].push_back(sampleByte >> 5 & 1);
+				w[3].push_back(sampleByte >> 4 & 1);
+				w[1].push_back(sampleByte >> 3 & 1);
+				w[3].push_back(sampleByte >> 2 & 1);
+				w[1].push_back(sampleByte >> 1 & 1);
+				w[3].push_back(sampleByte >> 0 & 1);
+			}
+			else
+			{
+				w[2].push_back(sampleByte >> 7 & 1);
+				w[4].push_back(sampleByte >> 6 & 1);
+				w[2].push_back(sampleByte >> 5 & 1);
+				w[4].push_back(sampleByte >> 4 & 1);
+				w[2].push_back(sampleByte >> 3 & 1);
+				w[4].push_back(sampleByte >> 2 & 1);
+				w[2].push_back(sampleByte >> 1 & 1);
+				w[4].push_back(sampleByte >> 0 & 1);
+			}
+		}
+	}
+	
+	
+	for (int i = 0; i < 32; ++i) {
+		for (int j = 0; j < 4; ++j) {
+			BYTE sampleByte[5] = { 0 };
+			for (int k = 0; k < 8; ++k) {
+				BYTE sampleBit[5] = { 0 };
+				
+				for (int l = 1; l < 5; ++l) {
+					sampleBit[l] = w[l][i * 32 + j * 8 + k];
+					sampleByte[l] = sampleByte[l] << 1;
+					sampleByte[l] |= sampleBit[l];
+				}
+				
+			}
+			preprocessedWatermark[i][j] = sampleByte[1];
+			preprocessedWatermark[i][j + 4] = sampleByte[2];
+			preprocessedWatermark[i + 32][j + 4] = sampleByte[3];
+			preprocessedWatermark[i + 32][j] = sampleByte[4];
+		}
+	}
+	
 
 	return;
 }
 
-void embedSolution() 
+void embedSolution()
 {
 	//begin
-	//8x8 block iterator
 	int y = 0, x = 0;
 
-	//for watermark
 	for (int i = 0; i < 64; ++i) {
 		for (int j = 0; j < 8; ++j) {
-			//for bit... embedding region
-			BYTE sampledByte = watermarkPixelData[i][j];
+			BYTE sampledByte = preprocessedWatermark[i][j];
 			for (int k = 0; k < 8; ++k)
 			{
 				colorData subBlock[8][8] = { 0 };
@@ -461,11 +480,10 @@ void embedSolution()
 				else if (embedded_subBlock == 4) {
 					sub_y = y + 4; sub_x = x;
 				}
-				
-				//watermark는 쪼개지 않는 것으로 일단.
-				BYTE sampledBit = sampledByte>>k & 1;
 
-				for (int yy = 0; yy < 3; ++yy){
+				BYTE sampledBit = sampledByte >> k & 1;
+
+				for (int yy = 0; yy < 3; ++yy) {
 					for (int xx = 0; xx < 3; ++xx) {
 						//Blue Channel
 						if (sampledBit == 1) {
@@ -502,89 +520,11 @@ void embedSolution()
 	return;
 }
 
-/*void embedSolution()
-{
-	//begin
-	for (int y = 0; y < 512; y += 8) {
-		for (int x = 0; x < 512; x += 8) {
-
-			colorData subBlock[8][8] = { 0 };
-
-			//8x8
-			for (int dy = 0; dy < 8; ++dy)
-				for (int dx = 0; dx < 8; ++dx) {
-					subBlock[dy][dx].blue = watermarkedPixelData[y + dy][x + dx].blue = pixelData[y + dy][x + dx].blue;
-					subBlock[dy][dx].green = watermarkedPixelData[y + dy][x + dx].green = pixelData[y + dy][x + dx].green;
-					subBlock[dy][dx].red = watermarkedPixelData[y + dy][x + dx].red = pixelData[y + dy][x + dx].red;
-				}
-
-			int embedded_subBlock = SIRD(subBlock);
-
-			//4x4 sub block is selected
-			int sub_y, sub_x;
-
-			if (embedded_subBlock == 1) {
-				sub_y = y; sub_x = x;
-			}
-			else if (embedded_subBlock == 2) {
-				sub_y = y; sub_x = x + 4;
-			}
-			else if (embedded_subBlock == 3) {
-				sub_y = y + 4; sub_x = x + 4;
-			}
-			else if (embedded_subBlock == 4) {
-				sub_y = y + 4; sub_x = x;
-			}
-
-			//subWatermark[embedded_subBlock] will be embedded
-			
-
-			for (int i = 0; i < 32; ++i) {
-				for (int j = 0; j < 4; ++j) {
-					BYTE sampledByte = subWatermark[embedded_subBlock][i][j];
-
-					for (int k = 0; k < 8; ++k) {
-						BYTE sampledBit = sampledByte >> k & 1;
-
-						for (int yy = 0; yy < 3; ++yy) {
-							for (int xx = 0; xx < 3; ++xx) {
-								//Blue Channel
-								if (sampledBit == 1) {
-									watermarkedPixelData[sub_y + yy][sub_x + xx].blue = pixelData[sub_y + yy][sub_x + xx].blue + (BYTE)ceil((K / Mask1[yy][xx]));
-								}
-								else
-								{
-									watermarkedPixelData[sub_y + yy][sub_x + xx].blue = pixelData[sub_y + yy][sub_x + xx].blue - (BYTE)ceil((K / Mask1[yy][xx]));
-								}
-
-								//Green, Red Channel
-								if (sampledBit == 1) {
-									watermarkedPixelData[sub_y + yy][sub_x + xx].green = pixelData[sub_y + yy][sub_x + xx].green + (BYTE)ceil((K / Mask2[yy][xx]));
-									watermarkedPixelData[sub_y + yy][sub_x + xx].red = pixelData[sub_y + yy][sub_x + xx].red + (BYTE)ceil((K / Mask2[yy][xx]));
-								}
-								else
-								{
-									watermarkedPixelData[sub_y + yy][sub_x + xx].green = pixelData[sub_y + yy][sub_x + xx].green - (BYTE)ceil((K / Mask2[yy][xx]));
-									watermarkedPixelData[sub_y + yy][sub_x + xx].red = pixelData[sub_y + yy][sub_x + xx].red - (BYTE)ceil((K / Mask2[yy][xx]));
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	
-	return;
-}*/
-
 void extractSolution()
 {
 	//begin
-	//8x8 block iterator
 	int y = 0, x = 0;
 
-	//for watermark
 	for (int i = 0; i < 64; ++i) {
 		for (int j = 0; j < 8; ++j) {
 
@@ -636,7 +576,6 @@ void extractSolution()
 				else
 					wbit = 0;
 
-				//watermarkbyte |= wbit << k;
 				extractedWatermarkPixelData[i][j] |= wbit << k;
 
 				x += 8;
@@ -646,8 +585,6 @@ void extractSolution()
 					y += 8;
 				}
 			}
-			//generated 1 byte
-			//extractedWatermarkPixelData[i][j] = watermarkbyte;
 		}
 	}
 	return;
@@ -655,70 +592,132 @@ void extractSolution()
 
 void combineWatermark()
 {
-	for (int i = 0; i < 32; ++i)
-		for (int j = 0; j < 4; ++j)
-			watermarkPixelData[i][j] = subWatermark[1][i][j];
+	vector<int> w[5];
 
-	//sub watermark 2
-	for (int i = 0; i < 32; ++i)
-		for (int j = 4; j < 8; ++j)
-			watermarkPixelData[i][j] = subWatermark[2][i][j - 4];
+	for (int i = 0; i < 32; ++i) {
+		for (int j = 0; j < 4; ++j) {
 
-	//sub watermark3
-	for (int i = 32; i < 64; ++i)
-		for (int j = 4; j < 8; ++j)
-			watermarkPixelData[i][j] = subWatermark[3][i - 32][j - 4];
+			BYTE sampleByte[5];
+			sampleByte[1] = extractedWatermarkPixelData[i][j];
+			sampleByte[2] = extractedWatermarkPixelData[i][j + 4];
+			sampleByte[3] = extractedWatermarkPixelData[i + 32][j + 4];
+			sampleByte[4] = extractedWatermarkPixelData[i + 32][j];
 
-	for (int i = 32; i < 64; ++i)
-		for (int j = 0; j < 4; ++j)
-			watermarkPixelData[i][j] = subWatermark[4][i - 32][j];
+			for (int k = 7; k >= 0; --k) 
+			{
+				w[1].push_back(sampleByte[1] >> k & 1);
+				w[2].push_back(sampleByte[2] >> k & 1);
+				w[3].push_back(sampleByte[3] >> k & 1);
+				w[4].push_back(sampleByte[4] >> k & 1);
+			}			
+		}
+	}
+
+	int index1 = 0, index2 = 0;
+
+	for (int i = 0; i < 64; ++i) {
+		for (int j = 0; j < 8; ++j) {
+			BYTE sampleByte = { 0 };
+
+			if (i % 2 == 0) {
+				sampleByte |= w[1][index1];
+				sampleByte = sampleByte << 1;
+				sampleByte |= w[3][index1++];
+				sampleByte = sampleByte << 1;
+
+				sampleByte |= w[1][index1];
+				sampleByte = sampleByte << 1;
+				sampleByte |= w[3][index1++];
+				sampleByte = sampleByte << 1;
+
+				sampleByte |= w[1][index1];
+				sampleByte = sampleByte << 1;
+				sampleByte |= w[3][index1++];
+				sampleByte = sampleByte << 1;
+
+				sampleByte |= w[1][index1];
+				sampleByte = sampleByte << 1;
+				sampleByte |= w[3][index1++];
+				
+			}
+			else
+			{
+				sampleByte |= w[2][index2];
+				sampleByte = sampleByte << 1;
+				sampleByte |= w[4][index2++];
+				sampleByte = sampleByte << 1;
+
+				sampleByte |= w[2][index2];
+				sampleByte = sampleByte << 1;
+				sampleByte |= w[4][index2++];
+				sampleByte = sampleByte << 1;
+
+				sampleByte |= w[2][index2];
+				sampleByte = sampleByte << 1;
+				sampleByte |= w[4][index2++];
+				sampleByte = sampleByte << 1;
+
+				sampleByte |= w[2][index2];
+				sampleByte = sampleByte << 1;
+				sampleByte |= w[4][index2++];
+			}
+			extractedWatermarkPixelData[i][j] = sampleByte;
+		}
+	}
+
+
+
+	
+	return;
 
 }
 int main()
 {
-	cout << "What do you want to do?\n" << "1. embed watermark\n" << "2. extract watermark\n" << ">> ";
+	cout << "What do you want to do?\n" << "1. embed watermark\n" << "2. extract watermark\n" <<  "3. exit \n"<<">> ";
 	int input = 0;
 	cin >> input;
 
-	while (input <= 0 || 3 <= input) {
+	while (input <= 0 || 4 <= input) {
 		cout << "error : enter the number between 1 to 2\n";
 		cin >> input;
 	}
 
-	if (input == 1) {
+	if (input == 1) 
 		embed = true;
-	}
-	else
-	{
+	else if(input == 2)
 		extract = true;
-	}
+	else
+		return 0;
+	
 
 	if (embed) {
-		loadFile();
-		loadWatermark();
+		string imageName, watermarkedImageName, watermarkName;
+		cout << "enter the file(image) name: ";
+		cin >> imageName;
+		watermarkedImageName = "";
 
-		//algorithm
+		cout << "enter the file(watermark) name: ";
+		cin >> watermarkName;
+
+		loadFile(imageName, watermarkedImageName);
+		loadWatermark(watermarkName);
 		preprocessing();
 		embedSolution();
 		saveFile();
 	}
 	else
 	{
-		loadFile();
+		string imageName, watermarkedImageName;
+		cout << "enter the file(image) name: ";
+		cin >> imageName;
+		cout << "enter the file(watermarked image) name : ";
+		cin >> watermarkedImageName;
+
+		loadFile(imageName, watermarkedImageName);
 		extractSolution();
 		combineWatermark();
 		saveWatermark();
 	}
-	
-	
-	
 
-
-
-
-
-
-
-	saveWatermark();
 	return 0;
 }
