@@ -9,7 +9,7 @@ typedef unsigned long DWORD;	//4byte
 bool extract = false, embed = false;
 #define SHIFT(a, n) (a<<n)
 int i = 0;
-int K = 20;
+int K = 15;
 struct BITMAPFILEHEADER {
 	BYTE bfType[2];	//2byte [0]='M', [1] = 'B' --> "BM"
 	DWORD bfSize;	//4byte
@@ -431,6 +431,7 @@ void embedSolution()
 	for (int i = 0; i < 64; ++i) {
 		for (int j = 0; j < 8; ++j) {
 			//for bit... embedding region
+			BYTE sampledByte = watermarkPixelData[i][j];
 			for (int k = 0; k < 8; ++k)
 			{
 				colorData subBlock[8][8] = { 0 };
@@ -460,8 +461,8 @@ void embedSolution()
 				else if (embedded_subBlock == 4) {
 					sub_y = y + 4; sub_x = x;
 				}
-
-				BYTE sampledByte = subWatermark[embedded_subBlock][i][j];
+				
+				//watermark는 쪼개지 않는 것으로 일단.
 				BYTE sampledBit = sampledByte>>k & 1;
 
 				for (int yy = 0; yy < 3; ++yy){
@@ -501,6 +502,82 @@ void embedSolution()
 	return;
 }
 
+/*void embedSolution()
+{
+	//begin
+	for (int y = 0; y < 512; y += 8) {
+		for (int x = 0; x < 512; x += 8) {
+
+			colorData subBlock[8][8] = { 0 };
+
+			//8x8
+			for (int dy = 0; dy < 8; ++dy)
+				for (int dx = 0; dx < 8; ++dx) {
+					subBlock[dy][dx].blue = watermarkedPixelData[y + dy][x + dx].blue = pixelData[y + dy][x + dx].blue;
+					subBlock[dy][dx].green = watermarkedPixelData[y + dy][x + dx].green = pixelData[y + dy][x + dx].green;
+					subBlock[dy][dx].red = watermarkedPixelData[y + dy][x + dx].red = pixelData[y + dy][x + dx].red;
+				}
+
+			int embedded_subBlock = SIRD(subBlock);
+
+			//4x4 sub block is selected
+			int sub_y, sub_x;
+
+			if (embedded_subBlock == 1) {
+				sub_y = y; sub_x = x;
+			}
+			else if (embedded_subBlock == 2) {
+				sub_y = y; sub_x = x + 4;
+			}
+			else if (embedded_subBlock == 3) {
+				sub_y = y + 4; sub_x = x + 4;
+			}
+			else if (embedded_subBlock == 4) {
+				sub_y = y + 4; sub_x = x;
+			}
+
+			//subWatermark[embedded_subBlock] will be embedded
+			
+
+			for (int i = 0; i < 32; ++i) {
+				for (int j = 0; j < 4; ++j) {
+					BYTE sampledByte = subWatermark[embedded_subBlock][i][j];
+
+					for (int k = 0; k < 8; ++k) {
+						BYTE sampledBit = sampledByte >> k & 1;
+
+						for (int yy = 0; yy < 3; ++yy) {
+							for (int xx = 0; xx < 3; ++xx) {
+								//Blue Channel
+								if (sampledBit == 1) {
+									watermarkedPixelData[sub_y + yy][sub_x + xx].blue = pixelData[sub_y + yy][sub_x + xx].blue + (BYTE)ceil((K / Mask1[yy][xx]));
+								}
+								else
+								{
+									watermarkedPixelData[sub_y + yy][sub_x + xx].blue = pixelData[sub_y + yy][sub_x + xx].blue - (BYTE)ceil((K / Mask1[yy][xx]));
+								}
+
+								//Green, Red Channel
+								if (sampledBit == 1) {
+									watermarkedPixelData[sub_y + yy][sub_x + xx].green = pixelData[sub_y + yy][sub_x + xx].green + (BYTE)ceil((K / Mask2[yy][xx]));
+									watermarkedPixelData[sub_y + yy][sub_x + xx].red = pixelData[sub_y + yy][sub_x + xx].red + (BYTE)ceil((K / Mask2[yy][xx]));
+								}
+								else
+								{
+									watermarkedPixelData[sub_y + yy][sub_x + xx].green = pixelData[sub_y + yy][sub_x + xx].green - (BYTE)ceil((K / Mask2[yy][xx]));
+									watermarkedPixelData[sub_y + yy][sub_x + xx].red = pixelData[sub_y + yy][sub_x + xx].red - (BYTE)ceil((K / Mask2[yy][xx]));
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	return;
+}*/
+
 void extractSolution()
 {
 	//begin
@@ -510,6 +587,7 @@ void extractSolution()
 	//for watermark
 	for (int i = 0; i < 64; ++i) {
 		for (int j = 0; j < 8; ++j) {
+
 			for (int k = 0; k < 8; ++k)
 			{
 				colorData subBlock[8][8] = { 0 };
@@ -559,7 +637,7 @@ void extractSolution()
 					wbit = 0;
 
 				//watermarkbyte |= wbit << k;
-				subWatermark[embedded_subBlock][i][j] |= wbit << k;
+				extractedWatermarkPixelData[i][j] |= wbit << k;
 
 				x += 8;
 				if (x == 512)
